@@ -75,6 +75,36 @@ def load_art_yifenduan(conn: sqlite3.Connection) -> None:
     merged.to_sql("一分段_美术与设计类", conn, if_exists="replace", index=False)
 
 
+def load_art_composite_yifenduan(conn: sqlite3.Connection) -> None:
+    """美术与设计类本科线上综合成绩一分段（2025、2026，按年份顺序合并）。
+
+    与 ``一分段_美术与设计类``（专业统考成绩，整数满分 300）不同，
+    本表为综合成绩（文化×30% + 统考×70%，含优惠加分，小数）。
+    """
+    frames: list[pd.DataFrame] = []
+    for year in (2025, 2026):
+        df = read_csv(FACTS_DIR / f"{year}年美术与设计类本科线上综合成绩一分段.csv")
+        frames.append(
+            pd.DataFrame(
+                {
+                    "年份": year,
+                    "综合成绩": df["综合成绩"],
+                    "本段人数": df["本段人数"],
+                    "累计人数": df["累计人数"],
+                }
+            )
+        )
+
+    merged = pd.concat(frames, ignore_index=True)
+    merged.to_sql("一分段_美术与设计类综合成绩", conn, if_exists="replace", index=False)
+    # 同时导出合并后的单文件（按年份顺序）
+    merged.to_csv(
+        FACTS_DIR / "美术与设计类本科线上综合成绩一分段_2025-2026.csv",
+        index=False,
+        encoding="utf-8-sig",
+    )
+
+
 def create_indexes(conn: sqlite3.Connection) -> None:
     cur = conn.cursor()
     indexes = [
@@ -86,6 +116,8 @@ def create_indexes(conn: sqlite3.Connection) -> None:
         ('idx_yfd_phy_年份档分', "一分段_物理类", "年份, 档分"),
         ('idx_yfd_art_年份', "一分段_美术与设计类", "年份"),
         ('idx_yfd_art_年份成绩', "一分段_美术与设计类", "年份, 成绩"),
+        ('idx_yfd_art_comp_年份', "一分段_美术与设计类综合成绩", "年份"),
+        ('idx_yfd_art_comp_年份成绩', "一分段_美术与设计类综合成绩", "年份, 综合成绩"),
     ]
     for name, table, cols in indexes:
         cur.execute(f'CREATE INDEX IF NOT EXISTS "{name}" ON "{table}" ({cols})')
@@ -99,6 +131,7 @@ def verify(conn: sqlite3.Connection) -> None:
         "录取控制分数线_普通类体育类",
         "一分段_物理类",
         "一分段_美术与设计类",
+        "一分段_美术与设计类综合成绩",
     ]
     print("=== 表行数 ===")
     for table in tables:
@@ -107,7 +140,7 @@ def verify(conn: sqlite3.Connection) -> None:
         print(f"  {table}: {count}")
 
     print("\n=== 年份分布 ===")
-    for table in ("一分段_物理类", "一分段_美术与设计类"):
+    for table in ("一分段_物理类", "一分段_美术与设计类", "一分段_美术与设计类综合成绩"):
         cur.execute(f'SELECT 年份, COUNT(*) FROM "{table}" GROUP BY 年份 ORDER BY 年份')
         rows = cur.fetchall()
         print(f"  {table}: {dict(rows)}")
@@ -128,6 +161,7 @@ def main() -> None:
         load_control_lines(conn)
         load_physics_yifenduan(conn)
         load_art_yifenduan(conn)
+        load_art_composite_yifenduan(conn)
         create_indexes(conn)
         verify(conn)
     finally:
